@@ -1,0 +1,7 @@
+{
+  "name": "Ide Produk Generator",
+  "description": "A web application to generate product ideas from market analysis to promotional strategies using Gemini AI. Helps users analyze market needs, get product recommendations, create MVP plans, and build marketing strategies.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
