@@ -2,21 +2,22 @@
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { Step1State, MarketAnalysisResult, ProductRecommendation, MvpGuide, PromoStrategy, GroundingChunk } from '../types';
 
-const API_KEY = process.env.API_KEY;
-if (!API_KEY) {
-    console.error("API_KEY environment variable not set.");
-}
-const ai = new GoogleGenAI({ apiKey: API_KEY! });
+const getAiClient = () => {
+    const API_KEY = process.env.API_KEY;
+    if (!API_KEY) {
+        console.error("API_KEY environment variable not set.");
+        return null;
+    }
+    return new GoogleGenAI({ apiKey: API_KEY });
+};
 
 const safeJsonParse = <T,>(text: string): T | null => {
     try {
-        // Find the start and end of the JSON object/array
         const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```|({[\s\S]*})|(\[[\s\S]*\])/);
         if (!jsonMatch) {
           console.error("No JSON found in text:", text);
           return null;
         }
-        // Use the first non-null capturing group
         const jsonString = jsonMatch[1] || jsonMatch[2] || jsonMatch[3];
         if (!jsonString) {
           console.error("Could not extract JSON string from match:", jsonMatch);
@@ -51,6 +52,9 @@ export const analyzeMarket = async (inputs: Step1State['inputs']): Promise<Marke
     `;
     
     try {
+        const ai = getAiClient();
+        if (!ai) return null;
+
         const response: GenerateContentResponse = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: prompt,
@@ -70,13 +74,11 @@ export const analyzeMarket = async (inputs: Step1State['inputs']): Promise<Marke
         return { ...result, sources };
     } catch (error) {
         console.error("Error analyzing market:", error);
-        // FIX: Added missing return statement in catch block.
         return null;
     }
 };
 
 export const getInDepthAnalysis = async (need: string, audience: string, capital: string): Promise<string | null> => {
-    // FIX: The prompt template literal was not assigned to a variable.
     const prompt = `
         Anda adalah seorang analis bisnis dan produk senior. Lakukan analisis mendalam untuk kebutuhan pasar berikut: "${need}". 
         Informasi tambahan:
@@ -93,6 +95,9 @@ export const getInDepthAnalysis = async (need: string, audience: string, capital
     `;
     
     try {
+        const ai = getAiClient();
+        if (!ai) return null;
+
         const response: GenerateContentResponse = await ai.models.generateContent({
             model: 'gemini-2.5-pro',
             contents: prompt,
@@ -109,7 +114,6 @@ export const getInDepthAnalysis = async (need: string, audience: string, capital
 };
 
 export const getProductRecommendations = async (analysis: string): Promise<ProductRecommendation[] | null> => {
-    // FIX: The prompt template literal was not assigned to a variable.
     const prompt = `
         Berdasarkan analisis mendalam ini: "${analysis}", berikan 3 rekomendasi produk atau layanan yang konkret dan inovatif.
 
@@ -124,6 +128,9 @@ export const getProductRecommendations = async (analysis: string): Promise<Produ
     `;
     
     try {
+        const ai = getAiClient();
+        if (!ai) return null;
+
         const response: GenerateContentResponse = await ai.models.generateContent({
             model: 'gemini-2.5-pro',
             contents: prompt,
@@ -142,7 +149,6 @@ export const getProductRecommendations = async (analysis: string): Promise<Produ
 };
 
 export const getMvpGuide = async (productName: string, audience: string, capital: string): Promise<MvpGuide | null> => {
-    // FIX: The prompt template literal was not assigned to a variable.
     const prompt = `
         Anda adalah seorang manajer produk berpengalaman. Buat panduan langkah-demi-langkah untuk membangun Minimum Viable Product (MVP) untuk produk: "${productName}".
         Konteks:
@@ -155,6 +161,9 @@ export const getMvpGuide = async (productName: string, audience: string, capital
     `;
     
     try {
+        const ai = getAiClient();
+        if (!ai) return null;
+
         const response: GenerateContentResponse = await ai.models.generateContent({
             model: 'gemini-2.5-pro',
             contents: prompt,
@@ -172,7 +181,6 @@ export const getMvpGuide = async (productName: string, audience: string, capital
 };
 
 export const getPromoStrategy = async (productName: string, audience: string, startDate: string, endDate: string): Promise<PromoStrategy | null> => {
-    // FIX: The prompt template literal was not assigned to a variable.
     const prompt = `
         Anda adalah seorang ahli strategi pemasaran digital. Buat strategi promosi yang komprehensif untuk produk "${productName}" yang menargetkan "${audience || 'Umum'}".
         Periode promosi: dari ${startDate} hingga ${endDate}.
@@ -183,6 +191,9 @@ export const getPromoStrategy = async (productName: string, audience: string, st
     `;
     
     try {
+        const ai = getAiClient();
+        if (!ai) return null;
+
         const response: GenerateContentResponse = await ai.models.generateContent({
             model: 'gemini-2.5-pro',
             contents: prompt,
