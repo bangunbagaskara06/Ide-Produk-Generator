@@ -94,3 +94,5 @@ export interface AppState {
 }
 
 export type Step = 'marketAnalysis' | 'productRecs' | 'mvpGuide' | 'promoStrategy';
+
+
