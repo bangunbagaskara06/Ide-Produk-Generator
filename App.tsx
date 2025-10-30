@@ -2,12 +2,13 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 import { AppState, Step } from './types';
 import Step1MarketAnalysis from './components/Step1_MarketAnalysis';
 import Step2ProductRecs from './components/Step2_ProductRecs';
 import Step3MvpGuide from './components/Step3_MvpGuide';
 import Step4PromoStrategy from './components/Step4_PromoStrategy';
-import { Download, Rocket } from 'lucide-react';
+import { Download, Rocket, FileSpreadsheet } from 'lucide-react';
 
 const initialState: AppState = {
   step1: {
@@ -95,23 +96,25 @@ export default function App() {
     };
     
     const addText = (text: string | string[], options: any = {}) => {
-        checkPageBreak(20);
-        doc.setFontSize(10);
         const splitText = doc.splitTextToSize(text, maxLineWidth);
+        const textHeight = doc.getTextDimensions(splitText).h;
+        checkPageBreak(textHeight);
+        doc.setFontSize(10);
         doc.text(splitText, margin, y, options);
-        y += doc.getTextDimensions(splitText).h + 10;
+        y += textHeight + 10;
     };
     
     const addKeyValue = (key: string, value: string) => {
-        checkPageBreak(15);
+        const valueX = margin + 120;
+        const splitValue = doc.splitTextToSize(value, pageWidth - valueX - margin);
+        const neededHeight = doc.getTextDimensions(splitValue).h + 5;
+        checkPageBreak(neededHeight);
         doc.setFontSize(10);
         doc.setFont('helvetica', 'bold');
         doc.text(key, margin, y);
         doc.setFont('helvetica', 'normal');
-        const valueX = margin + 120;
-        const splitValue = doc.splitTextToSize(value, pageWidth - valueX - margin);
         doc.text(splitValue, valueX, y);
-        y += doc.getTextDimensions(splitValue).h + 5;
+        y += neededHeight;
     };
 
     // --- RENDER PDF ---
@@ -136,6 +139,7 @@ export default function App() {
     
     doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
+    checkPageBreak(20);
     doc.text('Kebutuhan Pasar Teridentifikasi:', margin, y);
     y += 15;
     r1?.market_needs.forEach(need => {
@@ -149,6 +153,7 @@ export default function App() {
         y+=10;
         doc.setFontSize(12);
         doc.setFont('helvetica', 'bold');
+        checkPageBreak(20);
         doc.text('Analisis Mendalam:', margin, y);
         y+=15;
         // Simple markdown stripper
@@ -158,6 +163,7 @@ export default function App() {
         y+=10;
         doc.setFontSize(12);
         doc.setFont('helvetica', 'bold');
+        checkPageBreak(20);
         doc.text('Rekomendasi Produk:', margin, y);
         y+=15;
         appState.step2.productRecs?.forEach(rec => {
@@ -172,6 +178,7 @@ export default function App() {
         y += 15;
         const head = [['Tahap', 'Aktivitas', 'Waktu', 'Biaya (Rp)']];
         const body = appState.step3.mvpGuide?.mvp_steps.map(s => [s.tahap, s.aktivitas, s.estimasi_waktu, s.estimasi_biaya_rp.toLocaleString('id-ID')]) || [];
+        checkPageBreak(80); // Estimate table height
         autoTable(doc, { head, body, startY: y, theme: 'grid' });
         y = (doc as any).lastAutoTable.finalY + 20;
     }
@@ -184,6 +191,7 @@ export default function App() {
         y += 15;
         const head = [['Timeline', 'Kegiatan', 'Tools', 'Biaya (Rp)', 'Deadline']];
         const body = appState.step4.promoStrategy?.promo_plan.map(p => [p.timeline, p.kegiatan, p.tools, p.estimasi_biaya_rp.toLocaleString('id-ID'), p.deadline]) || [];
+        checkPageBreak(80); // Estimate table height
         autoTable(doc, { head, body, startY: y, theme: 'grid' });
         y = (doc as any).lastAutoTable.finalY + 20;
     }
@@ -192,6 +200,99 @@ export default function App() {
     setLoader('exporting', false);
 };
 
+const handleExportExcel = () => {
+    if (!isReportComplete) return;
+    setLoader('exporting_excel', true);
+
+    const wb = XLSX.utils.book_new();
+
+    const fitToColumn = (data: any[][]) => {
+        const colWidths = data[0].map((_: any, i: number) => {
+            return {
+                wch: Math.max(
+                    ...data.map((row: any[]) => row[i] ? row[i].toString().length : 0)
+                ) + 2
+            };
+        });
+        return colWidths;
+    };
+    
+    // --- Sheet 1: Market Analysis ---
+    const { inputs: i1, result: r1, selectedNeed } = appState.step1;
+    const ws1_data = [
+        ["Analisis Pasar"],
+        [],
+        ["Parameter", "Nilai"],
+        ["Lokasi", i1.location || 'Tidak ditentukan'],
+        ["Industri", i1.customIndustry || i1.industries.join(', ') || 'Tidak ditentukan'],
+        ["Target Audiens", i1.audience || 'Tidak ditentukan'],
+        ["Skala Bisnis", i1.scale],
+        ["Modal (Rp)", i1.capital ? parseInt(i1.capital).toLocaleString('id-ID') : 'Tidak ditentukan'],
+        [],
+        ["Ringkasan Analisis"],
+        [r1?.summary || ''],
+        [],
+        ["Kebutuhan Pasar Teridentifikasi"],
+        ["Kebutuhan", "Deskripsi", "Skor"],
+        ...(r1?.market_needs.map(n => [n.need, n.description, n.score]) || [])
+    ];
+    const ws1 = XLSX.utils.aoa_to_sheet(ws1_data);
+    ws1["!cols"] = [{wch: 25}, {wch: 60}, {wch: 10}];
+    XLSX.utils.book_append_sheet(wb, ws1, "1. Analisis Pasar");
+
+    // --- Sheet 2: Product Recommendation ---
+    if (selectedNeed) {
+        const ws2_data = [
+            ["Rekomendasi Produk"],
+            [],
+            ["Kebutuhan Pasar Dipilih", selectedNeed.need],
+            ["Deskripsi", selectedNeed.description],
+            [],
+            ["Analisis Mendalam"],
+            [appState.step2.inDepthAnalysis?.content.replace(/##\s|^\s*-\s/gm, '').replace(/\*\*/g, '') || ''],
+            [],
+            ["Rekomendasi Produk"],
+            ["Nama Produk", "Skor", "Manfaat", "Tantangan"],
+            ...(appState.step2.productRecs?.map(p => [p.name, p.score, p.benefits, p.weaknesses]) || [])
+        ];
+        const ws2 = XLSX.utils.aoa_to_sheet(ws2_data);
+        ws2["!cols"] = [{wch: 30}, {wch: 10}, {wch: 50}, {wch: 50}];
+        XLSX.utils.book_append_sheet(wb, ws2, "2. Rekomendasi Produk");
+    }
+    
+    // --- Sheet 3: MVP Guide ---
+    if (appState.step2.selectedProduct) {
+        const mvpData = appState.step3.mvpGuide?.mvp_steps.map(s => ({
+          "Tahap": s.tahap,
+          "Aktivitas": s.aktivitas,
+          "Detail": s.detail,
+          "Estimasi Waktu": s.estimasi_waktu,
+          "Estimasi Biaya (Rp)": s.estimasi_biaya_rp,
+        })) || [];
+        const ws3 = XLSX.utils.json_to_sheet(mvpData);
+        ws3["!cols"] = fitToColumn([Object.keys(mvpData[0] || {}), ...mvpData.map(Object.values)]);
+        XLSX.utils.book_append_sheet(wb, ws3, "3. Panduan MVP");
+    }
+
+    // --- Sheet 4: Promo Strategy ---
+    if (appState.step4.promoStrategy) {
+        const promoData = appState.step4.promoStrategy?.promo_plan.map(p => ({
+            "Timeline": p.timeline,
+            "Kegiatan": p.kegiatan,
+            "Keterangan": p.keterangan,
+            "Tools": p.tools,
+            "Estimasi Waktu": p.estimasi_waktu,
+            "Estimasi Biaya (Rp)": p.estimasi_biaya_rp,
+            "Deadline": p.deadline
+        })) || [];
+        const ws4 = XLSX.utils.json_to_sheet(promoData);
+        ws4["!cols"] = fitToColumn([Object.keys(promoData[0] || {}), ...promoData.map(Object.values)]);
+        XLSX.utils.book_append_sheet(wb, ws4, "4. Strategi Promosi");
+    }
+
+    XLSX.writeFile(wb, "Laporan_Ide_Produk.xlsx");
+    setLoader('exporting_excel', false);
+};
 
   const isReportComplete = !!appState.step4.promoStrategy;
 
@@ -296,13 +397,20 @@ export default function App() {
           <div className="mt-12 text-center p-6 border-2 border-dashed border-slate-700 rounded-lg">
               <h2 className="text-2xl font-bold text-white mb-4">Laporan Anda Telah Selesai!</h2>
               <p className="text-slate-400 mb-6">Anda sekarang dapat mengunduh laporan lengkap atau memulai analisis baru.</p>
-              <div className="flex justify-center gap-4">
+              <div className="flex justify-center flex-wrap gap-4">
                   <button
                       onClick={handleExport}
                       disabled={isLoading['exporting']}
                       className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-green-800 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-lg transition-transform transform hover:scale-105"
                   >
-                      {isLoading['exporting'] ? 'Mengekspor...' : <><Download size={20} /> Unduh Laporan (PDF)</>}
+                      {isLoading['exporting'] ? 'Mengekspor PDF...' : <><Download size={20} /> Unduh Laporan (PDF)</>}
+                  </button>
+                   <button
+                      onClick={handleExportExcel}
+                      disabled={isLoading['exporting_excel']}
+                      className="inline-flex items-center gap-2 bg-teal-600 hover:bg-teal-700 disabled:bg-teal-800 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-lg transition-transform transform hover:scale-105"
+                  >
+                      {isLoading['exporting_excel'] ? 'Mengekspor Excel...' : <><FileSpreadsheet size={20} /> Unduh Laporan (Excel)</>}
                   </button>
                   <button
                       onClick={handleReset}
