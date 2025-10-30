@@ -78,20 +78,63 @@ export const analyzeMarket = async (inputs: Step1State['inputs']): Promise<Marke
     }
 };
 
+export const getIndustriesForLocation = async (location: string, industries: string[]): Promise<string[] | null> => {
+    const prompt = `
+        Berdasarkan lokasi di kota "${location}", Indonesia, sarankan 3-5 industri yang paling relevan dan berpotensi paling menguntungkan dari daftar berikut:
+        [${industries.join(', ')}]
+
+        Pastikan jawaban Anda HANYA berupa array JSON yang berisi string nama industri yang disarankan.
+        Contoh format jawaban yang benar: ["Teknologi", "F&B", "Kesehatan"]
+    `;
+
+    try {
+        const ai = getAiClient();
+        if (!ai) return null;
+
+        const response: GenerateContentResponse = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+                temperature: 0.2,
+            },
+        });
+
+        const result = safeJsonParse<string[]>(response.text);
+        // Filter result to ensure only valid industries from the original list are returned
+        return result ? result.filter(r => industries.includes(r)) : null;
+    } catch (error) {
+        console.error("Error suggesting industries:", error);
+        return null;
+    }
+};
+
 export const getInDepthAnalysis = async (need: string, audience: string, capital: string): Promise<string | null> => {
     const prompt = `
-        Anda adalah seorang analis bisnis dan produk senior. Lakukan analisis mendalam untuk kebutuhan pasar berikut: "${need}". 
+        Anda adalah seorang analis bisnis dan produk senior dengan kemampuan copywriting yang hebat. Lakukan analisis mendalam untuk kebutuhan pasar berikut: "${need}". 
         Informasi tambahan:
         - Target audiens: "${audience || 'Umum'}"
         - Perkiraan modal: Rp ${capital ? parseInt(capital).toLocaleString('id-ID') : 'Tidak ditentukan'}.
 
-        Jabarkan secara detail dengan poin-poin berikut:
-        - **Analisis Permintaan:** Jelaskan mengapa kebutuhan ini penting saat ini. Sertakan data atau persentase jika memungkinkan.
-        - **Manfaat untuk Pelanggan:** Apa nilai utama yang didapat pelanggan?
-        - **Potensi Keuntungan:** Berikan perkiraan potensi pendapatan (range minimum, rata-rata, dan maksimum per bulan) untuk bisnis yang memenuhi kebutuhan ini.
-        - **Target Segmen:** Siapa segmen audiens yang paling ideal?
+        Sajikan analisis dalam format markdown yang terstruktur rapi dan mudah dibaca. Gunakan hierarki visual yang jelas.
 
-        Gunakan markup markdown untuk hirarki visual (bold, headings, lists). Highlight data penting. Buat agar tulisan sangat mudah dibaca dan poin-poin pentingnya langsung terlihat.
+        Struktur Wajib:
+        
+        ## Analisis Permintaan
+        Jelaskan **mengapa** kebutuhan ini penting saat ini. Sertakan data atau persentase jika memungkinkan untuk menyorot urgensi.
+
+        ## Manfaat Kunci untuk Pelanggan
+        Apa **nilai utama** yang akan didapatkan pelanggan? Gunakan bullet points untuk menjabarkan manfaat.
+
+        ## Potensi Keuntungan
+        Berikan perkiraan potensi pendapatan (range minimum, rata-rata, dan maksimum per bulan). Sajikan dalam format yang jelas, misalnya:
+        *   **Minimum:** Rp X
+        *   **Rata-rata:** Rp Y
+        *   **Maksimum:** Rp Z
+
+        ## Segmen Target Ideal
+        Jelaskan siapa segmen audiens yang paling ideal dan mengapa.
+
+        Pastikan setiap bagian memiliki judul (heading level 2), teks tebal (bold) untuk penekanan, dan daftar (bullet points) jika diperlukan. Tujuannya adalah membuat laporan yang profesional dan langsung ke intinya.
     `;
     
     try {

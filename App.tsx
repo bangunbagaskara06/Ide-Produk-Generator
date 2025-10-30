@@ -1,8 +1,8 @@
 
 import React, { useState, useRef, useCallback } from 'react';
 import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas';
-import { MarketAnalysisResult, ProductRecommendation, MvpStep, PromoPlanItem, AppState, Step } from './types';
+import autoTable from 'jspdf-autotable';
+import { AppState, Step } from './types';
 import Step1MarketAnalysis from './components/Step1_MarketAnalysis';
 import Step2ProductRecs from './components/Step2_ProductRecs';
 import Step3MvpGuide from './components/Step3_MvpGuide';
@@ -64,57 +64,140 @@ export default function App() {
     stepRefs[step].current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, []);
 
-  const handleStepCompletion = (nextStep: Step, data: Partial<AppState>) => {
-    setAppState(prev => ({ ...prev, ...data }));
-    setCurrentStep(nextStep);
-    setTimeout(() => scrollToStep(nextStep), 100);
-  };
-  
-  const handleExport = async () => {
-    if (!reportRef.current) return;
+ const handleExport = () => {
+    if (!isReportComplete) return;
     setLoader('exporting', true);
-    
-    const canvas = await html2canvas(reportRef.current, {
-        backgroundColor: '#0f172a', // slate-900
-        scale: 2,
-    });
-    const imgData = canvas.toDataURL('image/png');
-    
-    const pdf = new jsPDF({
-        orientation: 'p',
-        unit: 'mm',
-        format: 'a4',
-    });
-    
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = pdf.internal.pageSize.getHeight();
-    const imgWidth = canvas.width;
-    const imgHeight = canvas.height;
-    const ratio = imgWidth / imgHeight;
-    const canvasHeightInPdf = pdfWidth / ratio;
-    
-    let heightLeft = imgHeight;
-    let position = 0;
 
-    pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, canvasHeightInPdf);
-    heightLeft -= (pdfHeight * imgHeight / canvasHeightInPdf);
+    const doc = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.width;
+    const margin = 40;
+    const maxLineWidth = pageWidth - margin * 2;
+    let y = margin;
 
-    while (heightLeft > 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, canvasHeightInPdf);
-        heightLeft -= (pdfHeight * imgHeight / canvasHeightInPdf);
+    const checkPageBreak = (neededHeight = 20) => {
+      if (y + neededHeight > doc.internal.pageSize.height - margin) {
+        doc.addPage();
+        y = margin;
+      }
+    };
+    
+    const addSectionTitle = (title: string) => {
+        checkPageBreak(30);
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0, 188, 212); // Cyan color
+        doc.text(title, margin, y);
+        y += 25;
+        doc.setDrawColor(226, 232, 240); // slate-200
+        doc.line(margin, y - 15, pageWidth - margin, y - 15);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(45, 55, 72); // slate-700
+    };
+    
+    const addText = (text: string | string[], options: any = {}) => {
+        checkPageBreak(20);
+        doc.setFontSize(10);
+        const splitText = doc.splitTextToSize(text, maxLineWidth);
+        doc.text(splitText, margin, y, options);
+        y += doc.getTextDimensions(splitText).h + 10;
+    };
+    
+    const addKeyValue = (key: string, value: string) => {
+        checkPageBreak(15);
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.text(key, margin, y);
+        doc.setFont('helvetica', 'normal');
+        const valueX = margin + 120;
+        const splitValue = doc.splitTextToSize(value, pageWidth - valueX - margin);
+        doc.text(splitValue, valueX, y);
+        y += doc.getTextDimensions(splitValue).h + 5;
+    };
+
+    // --- RENDER PDF ---
+    // Title
+    doc.setFontSize(24);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42); // slate-900
+    doc.text('Laporan Ide Produk Generator', pageWidth / 2, y, { align: 'center' });
+    y += 30;
+    
+    // Step 1: Market Analysis
+    addSectionTitle('1. Analisis Pasar');
+    const { inputs: i1, result: r1, selectedNeed } = appState.step1;
+    addKeyValue('Lokasi:', i1.location || 'Tidak ditentukan');
+    addKeyValue('Industri:', i1.customIndustry || i1.industries.join(', ') || 'Tidak ditentukan');
+    addKeyValue('Target Audiens:', i1.audience || 'Tidak ditentukan');
+    addKeyValue('Skala Bisnis:', i1.scale);
+    addKeyValue('Modal:', i1.capital ? `Rp ${parseInt(i1.capital).toLocaleString('id-ID')}` : 'Tidak ditentukan');
+    y += 10;
+    addText(r1?.summary || '');
+    y += 10;
+    
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Kebutuhan Pasar Teridentifikasi:', margin, y);
+    y += 15;
+    r1?.market_needs.forEach(need => {
+        addKeyValue(`- ${need.need} (Skor: ${need.score})`, need.description);
+    });
+
+    // Step 2: Product Recommendation
+    if (selectedNeed) {
+        addSectionTitle('2. Rekomendasi Produk');
+        addKeyValue('Kebutuhan Dipilih:', `${selectedNeed.need} - ${selectedNeed.description}`);
+        y+=10;
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Analisis Mendalam:', margin, y);
+        y+=15;
+        // Simple markdown stripper
+        const cleanAnalysis = appState.step2.inDepthAnalysis?.content.replace(/##\s/g, '').replace(/\*\*/g, '').replace(/-\s/g, '  - ');
+        addText(cleanAnalysis || '');
+        
+        y+=10;
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Rekomendasi Produk:', margin, y);
+        y+=15;
+        appState.step2.productRecs?.forEach(rec => {
+            addKeyValue(`- ${rec.name} (Skor: ${rec.score})`, `Manfaat: ${rec.benefits}\nTantangan: ${rec.weaknesses}`);
+        });
+    }
+
+    // Step 3: MVP Guide
+    if (appState.step2.selectedProduct) {
+        addSectionTitle('3. Panduan MVP');
+        addKeyValue('Produk Dipilih:', appState.step2.selectedProduct.name);
+        y += 15;
+        const head = [['Tahap', 'Aktivitas', 'Waktu', 'Biaya (Rp)']];
+        const body = appState.step3.mvpGuide?.mvp_steps.map(s => [s.tahap, s.aktivitas, s.estimasi_waktu, s.estimasi_biaya_rp.toLocaleString('id-ID')]) || [];
+        autoTable(doc, { head, body, startY: y, theme: 'grid' });
+        y = (doc as any).lastAutoTable.finalY + 20;
+    }
+
+    // Step 4: Promo Strategy
+    if (appState.step4.promoStrategy) {
+        addSectionTitle('4. Strategi Promosi');
+        const { startDate, endDate } = appState.step4.inputs;
+        addKeyValue('Periode Promosi:', `${startDate} s/d ${endDate}`);
+        y += 15;
+        const head = [['Timeline', 'Kegiatan', 'Tools', 'Biaya (Rp)', 'Deadline']];
+        const body = appState.step4.promoStrategy?.promo_plan.map(p => [p.timeline, p.kegiatan, p.tools, p.estimasi_biaya_rp.toLocaleString('id-ID'), p.deadline]) || [];
+        autoTable(doc, { head, body, startY: y, theme: 'grid' });
+        y = (doc as any).lastAutoTable.finalY + 20;
     }
     
-    pdf.save('Laporan_Ide_Produk.pdf');
+    doc.save('Laporan_Ide_Produk.pdf');
     setLoader('exporting', false);
-  };
+};
+
 
   const isReportComplete = !!appState.step4.promoStrategy;
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-200 p-4 sm:p-6 lg:p-8">
-      <div className="max-w-4xl mx-auto">
+      <div className="w-full lg:w-4/5 mx-auto">
         <header className="text-center mb-10">
           <div className="inline-flex items-center gap-3 mb-2">
             <Rocket className="w-10 h-10 text-cyan-400" />
@@ -126,10 +209,16 @@ export default function App() {
         <div className="sticky top-0 z-10 bg-slate-900/80 backdrop-blur-lg py-4 mb-8">
             <div className="flex items-center justify-center space-x-2 sm:space-x-4">
                 {STEPS.map(({ id, title }, index) => {
-                    const isActive = STEPS.findIndex(s => s.id === currentStep) >= index;
+                    const stepIndex = STEPS.findIndex(s => s.id === currentStep);
+                    const isActive = stepIndex >= index;
+                    const isPassed = stepIndex > index;
                     return (
                         <React.Fragment key={id}>
-                            <div className="flex flex-col items-center">
+                            <div 
+                              className={`flex flex-col items-center ${isPassed ? 'cursor-pointer' : 'cursor-default'}`}
+                              onClick={isPassed ? () => scrollToStep(id) : undefined}
+                              aria-label={isPassed ? `Kembali ke ${title}` : title}
+                            >
                                 <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${isActive ? 'bg-cyan-500 border-cyan-500 text-white' : 'bg-slate-700 border-slate-600 text-slate-400'}`}>
                                     {index + 1}
                                 </div>
@@ -157,7 +246,7 @@ export default function App() {
               />
             </div>
 
-            {currentStep !== 'marketAnalysis' && (
+            {appState.step1.selectedNeed && (
               <div ref={stepRefs.productRecs}>
                 <Step2ProductRecs
                   state={appState}
@@ -175,7 +264,7 @@ export default function App() {
               </div>
             )}
             
-            {(currentStep === 'mvpGuide' || currentStep === 'promoStrategy') && (
+            {appState.step2.selectedProduct && (
               <div ref={stepRefs.mvpGuide}>
                 <Step3MvpGuide
                   state={appState}
@@ -191,7 +280,7 @@ export default function App() {
               </div>
             )}
 
-            {currentStep === 'promoStrategy' && (
+            {appState.step3.mvpGuide && (
                <div ref={stepRefs.promoStrategy}>
                 <Step4PromoStrategy
                   state={appState}

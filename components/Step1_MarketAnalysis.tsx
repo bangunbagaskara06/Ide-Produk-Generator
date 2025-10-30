@@ -1,6 +1,6 @@
 
-import React from 'react';
-import { Lightbulb, MapPin, Target, Users, DollarSign, Building, Search } from 'lucide-react';
+import React, { useState } from 'react';
+import { Lightbulb, MapPin, Target, Users, DollarSign, Building, Search, Sparkles } from 'lucide-react';
 import { Step1State, MarketNeed } from '../types';
 import * as geminiService from '../services/geminiService';
 import LoadingAnimation from './shared/LoadingAnimation';
@@ -19,6 +19,7 @@ interface Step1Props {
 }
 
 const Step1MarketAnalysis: React.FC<Step1Props> = ({ state, setState, onComplete, isLoading, setLoading }) => {
+  const [isSuggesting, setIsSuggesting] = useState(false);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -51,6 +52,19 @@ const Step1MarketAnalysis: React.FC<Step1Props> = ({ state, setState, onComplete
         setState({ result });
     }
   };
+  
+  const handleSuggestIndustries = async () => {
+    if (!state.inputs.location) return;
+    setIsSuggesting(true);
+    const suggestedIndustries = await geminiService.getIndustriesForLocation(state.inputs.location, INDUSTRIES);
+    if (suggestedIndustries) {
+        setState({ inputs: { ...state.inputs, industries: suggestedIndustries, customIndustry: '' } });
+    } else {
+        // You could add a toast notification here for the user
+        console.error("Gagal menyarankan industri.");
+    }
+    setIsSuggesting(false);
+  };
 
   return (
     <section className="p-6 bg-slate-800 rounded-xl border border-slate-700">
@@ -66,11 +80,26 @@ const Step1MarketAnalysis: React.FC<Step1Props> = ({ state, setState, onComplete
               <label className="font-semibold text-slate-300 mb-2 flex items-center gap-2">
                 <MapPin size={18} /> Lokasi <span className="text-slate-500 text-sm">(Opsional)</span>
               </label>
-              <input
-                type="text" name="location" placeholder="Contoh: Jakarta"
-                value={state.inputs.location} onChange={handleInputChange}
-                className="w-full bg-slate-700 border border-slate-600 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="text" name="location" placeholder="Contoh: Jakarta"
+                  value={state.inputs.location} onChange={handleInputChange}
+                  className="w-full bg-slate-700 border border-slate-600 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                />
+                <button
+                  type="button"
+                  onClick={handleSuggestIndustries}
+                  disabled={isSuggesting || !state.inputs.location}
+                  className="bg-teal-600 hover:bg-teal-700 disabled:bg-teal-800 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors shrink-0"
+                  title="Pilihkan industri relevan berdasarkan lokasi"
+                >
+                  {isSuggesting ? (
+                    <div className="w-5 h-5 border-2 border-t-transparent border-white rounded-full animate-spin"></div>
+                  ) : (
+                    <><Sparkles size={18} /> Pilihkan</>
+                  )}
+                </button>
+              </div>
             </div>
             <div>
               <label className="font-semibold text-slate-300 mb-2 flex items-center gap-2">
